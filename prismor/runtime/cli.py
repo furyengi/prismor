@@ -59,7 +59,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 if __package__ in {None, ""}:
     # Run as a standalone script (prismor/runtime/cli.py): put the repo root
@@ -4636,6 +4636,25 @@ def _hooks_by_scope(workspace: Path) -> Dict[str, Dict[str, Optional[str]]]:
     return out
 
 
+def _status_effective_mode(
+    hook_mode: Optional[str], engine: Optional[Any]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return the mode/status source when a signed org policy is active."""
+    meta = getattr(engine, "remote_policy_meta", None) or {}
+    if not meta or not getattr(engine, "workspace_managed", False):
+        return hook_mode, None
+
+    mode = getattr(engine, "device_mode", None) or getattr(engine, "default_mode", None)
+    source = "org policy"
+    name = meta.get("profile_name")
+    version = meta.get("version")
+    if name:
+        source += f' "{name}"'
+    if version is not None:
+        source += f" v{version}"
+    return mode or hook_mode, source
+
+
 def _git_root_or_self(path: Path) -> Path:
     """Nearest ancestor containing .git (the repo root), else the path itself."""
     try:
@@ -5378,9 +5397,17 @@ def _print_status_overview(workspace: Path) -> None:
         elif _m == "observe" and mode is None:
             mode = "observe"
 
+    try:
+        engine = PolicyEngine(workspace=workspace)
+    except Exception:
+        engine = None
+    mode, mode_source = _status_effective_mode(mode, engine)
+
     if agents_with_hooks:
         mode_color = _GREEN if mode == "enforce" else _YELLOW
         mode_str = _color(mode or "unknown", mode_color)
+        if mode_source:
+            mode_str += f" ({mode_source})"
         if hooks_by_scope["project"] and hooks_by_scope["global"]:
             scope_str = "project + global"
         elif hooks_by_scope["global"]:
@@ -5448,11 +5475,11 @@ def _print_status_overview(workspace: Path) -> None:
         print(f"  {_color('Codex cloak:', _GREEN)} block-only; use `prismor cloak run -- <command>` for placeholders")
 
     # Rules
-    try:
-        engine = PolicyEngine(workspace=workspace)
-        print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active")
-    except Exception:
-        engine = None
+    if engine is not None:
+        try:
+            print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active")
+        except Exception:
+            engine = None
 
     _print_status_quota(engine)
 

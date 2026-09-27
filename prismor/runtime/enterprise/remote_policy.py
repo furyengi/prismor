@@ -762,6 +762,7 @@ def fetch(ttl: float = DEFAULT_TTL_SECONDS, force: bool = False) -> bool:
         "fetched_at": time.time(),
         "version": body.get("version"),
         "profile_id": body.get("profile_id"),
+        "profile_name": body.get("profile_name") or body.get("profileName"),
         "scope": body.get("scope"),
         "full_capture": full_capture,
     }), encoding="utf-8")
